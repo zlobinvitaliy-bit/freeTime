@@ -134,45 +134,45 @@ class DatabaseManager:
             return cursor.fetchall()
     
     def get_employees_work_status(self, staff_ids: List[int]) -> dict:
-        """Возвращает словарь с состоянием сотрудников на работе {staff_id: bool}"""
-        result = {}
+        """Возвращает словарь с состоянием сотрудников на работе {staff_id: bool}
+
+        Оптимизирован для выполнения одного запроса вместо N.
+        """
+        if not staff_ids:
+            return {}
+
+        result = {staff_id: False for staff_id in staff_ids}
         today = datetime.now().date()
-        
+
         with self.get_connection() as conn:
             cursor = conn.cursor()
-            
-            # Пытаемся обработать очередь при успешном соединении
+
             if self.event_queue:
                 self._process_queue(cursor)
                 conn.commit()
-            
-            for staff_id in staff_ids:
-                # Получаем данные для конкретного сотрудника
-                two_days_ago = today - timedelta(days=2)
-                
-                query = """
-                SELECT TIME_PASS, DATE_PASS, TYPE_PASS
-                FROM TABEL_INTERMEDIADATE 
-                WHERE STAFF_ID = ? 
-                AND DATE_PASS >= ?
-                ORDER BY DATE_PASS DESC, TIME_PASS DESC
-                """
-                
-                cursor.execute(query, (staff_id, two_days_ago))
-                records = cursor.fetchall()
-                
-                if not records:
-                    # Если нет записей за последние 2 дня, считаем что сотрудник не на работе
-                    result[staff_id] = False
-                    continue
-                
-                # Берем самую последнюю запись (первую в результате из-за сортировки DESC)
-                last_record = records[0]
-                time_pass, date_pass, type_pass = last_record
-                
-                # Проверяем условия: сегодняшняя дата и TYPE_PASS = 1
-                is_at_work = (date_pass == today and type_pass == 1)
-                result[staff_id] = is_at_work
+
+            # Используем ROW_NUMBER() для получения последней записи для каждого сотрудника
+            placeholders = ', '.join('?' * len(staff_ids))
+            query = f"""
+            WITH RankedEvents AS (
+                SELECT
+                    STAFF_ID, DATE_PASS, TYPE_PASS,
+                    ROW_NUMBER() OVER(PARTITION BY STAFF_ID ORDER BY DATE_PASS DESC, TIME_PASS DESC) as rn
+                FROM TABEL_INTERMEDIADATE
+                WHERE STAFF_ID IN ({placeholders})
+            )
+            SELECT STAFF_ID, DATE_PASS, TYPE_PASS
+            FROM RankedEvents
+            WHERE rn = 1
+            """
+
+            cursor.execute(query, staff_ids)
+            last_events = cursor.fetchall()
+
+            for event in last_events:
+                staff_id, date_pass, type_pass = event
+                if date_pass == today and type_pass == 1:
+                    result[staff_id] = True
         
         return result
     
@@ -263,8 +263,15 @@ class DatabaseManager:
                 UPDATE REG_EVENTS
                 SET TIME_EV = ?, LAST_TIMESTAMP = ?
                 WHERE STAFF_ID = ? AND DATE_EV = ? AND TIME_EV = ?
+                ROWS 1; -- Firebird-специфичный синтаксис для обновления только одной записи
                 """
                 cursor.execute(query_reg_events, (new_time, new_timestamp, staff_id, date_pass, old_time_str))
+
+                if cursor.rowcount == 0:
+                    logging.warning("Не удалось найти соответствующую запись в REG_EVENTS для обновления.")
+                    # Опционально: можно откатить транзакцию, если целостность критична
+                    # conn.rollback()
+                    # return False, "Запись в REG_EVENTS не найдена."
 
                 conn.commit()
                 logging.info(f"Время события для staff_id {staff_id} успешно обновлено на {new_time}")
