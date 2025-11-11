@@ -150,14 +150,14 @@ async def process_time(message: types.Message, state: FSMContext):
     event_type = data['event_type']
     date_pass = data['date_pass']
     
-    await message.answer("⏳ Создаю событие в обеих таблицах...", reply_markup=ReplyKeyboardRemove())
+    await message.answer("⏳ Создаю событие...", reply_markup=ReplyKeyboardRemove())
     
-    success, error_msg = db_manager.create_event(staff_id, date_pass, time_str, event_type)
+    status, message_text = db_manager.create_event(staff_id, date_pass, time_str, event_type)
     
-    if success:
-        event_type_text = "🟢 Вход" if event_type == "entry" else "🔴 Выход"
-        date_display = datetime.strptime(date_pass, "%Y-%m-%d").strftime("%d.%m.%Y")
-        
+    event_type_text = "🟢 Вход" if event_type == "entry" else "🔴 Выход"
+    date_display = datetime.strptime(date_pass, "%Y-%m-%d").strftime("%d.%m.%Y")
+    
+    if status == 'success':
         await message.answer(
             f"✅ <b>Событие успешно создано!</b>\n\n"
             f"📋 Данные добавлены в таблицы:\n"
@@ -170,12 +170,24 @@ async def process_time(message: types.Message, state: FSMContext):
             parse_mode="HTML",
             reply_markup=create_main_keyboard()
         )
-    else:
+    elif status == 'queued':
         await message.answer(
-            f"❌ Ошибка при создании события!\n\n"
-            f"Детали: {error_msg}\n\n"
-            f"Попробуйте еще раз с помощью кнопки ниже.",
+            f"🟡 <b>Сервер БД недоступен. Событие в очереди.</b>\n\n"
+            f"Событие будет автоматически создано, как только сервер снова будет онлайн.\n\n"
+            f"👤 Сотрудник: {staff_name}\n"
+            f"📝 Событие: {event_type_text}\n"
+            f"📅 Дата: {date_display}\n"
+            f"⏰ Время: {time_str}",
+            parse_mode="HTML",
             reply_markup=create_main_keyboard()
+        )
+    else: # status == 'error'
+        await message.answer(
+            f"❌ <b>Ошибка при создании события!</b>\n\n"
+            f"Детали: {message_text}\n\n"
+            f"Попробуйте еще раз с помощью кнопки ниже.",
+            reply_markup=create_main_keyboard(),
+            parse_mode="HTML"
         )
     
     await state.clear()
