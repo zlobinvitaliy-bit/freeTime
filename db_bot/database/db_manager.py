@@ -191,7 +191,7 @@ class DatabaseManager:
             query = """
             SELECT DATE_EV, TIME_EV, AREAS_ID, LAST_TIMESTAMP
             FROM REG_EVENTS 
-            WHERE STAFF_ID = ? AUDIT
+            WHERE STAFF_ID = ?
             AND DATE_EV >= ?
             AND AREAS_ID IN (25376, 1)
             ORDER BY DATE_EV DESC, TIME_EV DESC
@@ -199,3 +199,80 @@ class DatabaseManager:
             
             cursor.execute(query, (staff_id, two_days_ago))
             return cursor.fetchall()
+
+    def get_last_four_events(self) -> List[Tuple]:
+        """Получает последние 4 события из таблицы TABEL_INTERMEDIADATE.
+
+        Returns:
+            Список кортежей, где каждый кортеж содержит:
+            - rdb$db_key: уникальный идентификатор записи
+            - STAFF_ID: ID сотрудника
+            - DATE_PASS: дата события
+            - TIME_PASS: время события
+            - TYPE_PASS: тип события (1 - вход, 2 - выход)
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            # При успешном соединении пытаемся обработать очередь
+            if self.event_queue:
+                self._process_queue(cursor)
+                conn.commit()
+            
+            query = """
+            SELECT FIRST 4 rdb$db_key, STAFF_ID, DATE_PASS, TIME_PASS, TYPE_PASS
+            FROM TABEL_INTERMEDIADATE 
+            ORDER BY DATE_PASS DESC, TIME_PASS DESC
+            """
+            
+            cursor.execute(query)
+            return cursor.fetchall()
+
+    def update_event_time(self, db_key, staff_id: int, date_pass, old_time_pass, new_time: str) -> Tuple[bool, str]:
+        """Обновляет время события в таблицах TABEL_INTERMEDIADATE и REG_EVENTS.
+
+        Args:
+            db_key: Уникальный идентификатор записи в TABEL_INTERMEDIADATE.
+            staff_id: ID сотрудника.
+            date_pass: Дата события.
+            old_time_pass: Старое время события (для поиска в REG_EVENTS).
+            new_time: Новое время для установки.
+
+        Returns:
+            Кортеж (True, "") при успехе или (False, "сообщение об ошибке") при неудаче.
+        """
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+
+                # 1. Обновление записи в TABEL_INTERMEDIADATE по rdb$db_key
+                query_intermediate = """
+                UPDATE TABEL_INTERMEDIADATE
+                SET TIME_PASS = ?
+                WHERE rdb$db_key = ?
+                """
+                cursor.execute(query_intermediate, (new_time, db_key))
+
+                # 2. Обновление записи в REG_EVENTS
+                # Формируем новый timestamp для REG_EVENTS
+                new_timestamp = f"{date_pass.strftime('%Y-%m-%d')} {new_time}"
+                # Конвертируем старое время в строку для поиска
+                old_time_str = old_time_pass.strftime('%H:%M:%S')
+
+                # Ищем запись по совокупности полей, так как у REG_EVENTS нет простого уникального ключа
+                query_reg_events = """
+                UPDATE REG_EVENTS
+                SET TIME_EV = ?, LAST_TIMESTAMP = ?
+                WHERE STAFF_ID = ? AND DATE_EV = ? AND TIME_EV = ?
+                """
+                cursor.execute(query_reg_events, (new_time, new_timestamp, staff_id, date_pass, old_time_str))
+
+                conn.commit()
+                logging.info(f"Время события для staff_id {staff_id} успешно обновлено на {new_time}")
+                return True, ""
+                
+        except Exception as e:
+            error_msg = f"Ошибка при обновлении времени события: {str(e)}"
+            logging.error(error_msg)
+            # В случае ошибки откатываем транзакцию
+            conn.rollback()
+            return False, error_msg

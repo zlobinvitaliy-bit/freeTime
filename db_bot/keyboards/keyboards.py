@@ -81,3 +81,28 @@ def create_quick_time_keyboard():
         one_time_keyboard=True
     )
     return keyboard
+
+def create_events_for_edit_keyboard(events):
+    """Создает инлайн-клавиатуру для выбора события для редактирования.
+
+    Args:
+        events: Список событий, полученный из db_manager.get_last_four_events().
+
+    Returns:
+        Объект InlineKeyboardMarkup с кнопками для каждого события.
+    """
+    buttons = []
+    for event in events:
+        # Распаковываем данные о событии
+        db_key, staff_id, date_pass, time_pass, type_pass = event
+        # Определяем иконку и имя сотрудника
+        event_type_text = "🟢" if type_pass == 1 else "🔴"
+        staff_name = next((name for name, s_id in STAFF_IDS.items() if s_id == staff_id), "Unknown")
+        
+        # Формируем текст для кнопки
+        button_text = f"{event_type_text} {staff_name} - {date_pass.strftime('%d.%m')} {time_pass.strftime('%H:%M:%S')}"
+        # Создаем callback_data, содержащий уникальный ключ события (db_key)
+        callback_data = f"edit_event_{db_key.decode('utf-8')}"
+        buttons.append([InlineKeyboardButton(text=button_text, callback_data=callback_data)])
+    
+    return InlineKeyboardMarkup(inline_keyboard=buttons)

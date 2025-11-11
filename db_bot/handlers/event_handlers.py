@@ -8,11 +8,89 @@ from database.db_manager import DatabaseManager
 from keyboards.keyboards import (
     create_main_keyboard, create_staff_for_event_keyboard, 
     create_event_type_keyboard, create_quick_date_keyboard, 
-    create_quick_time_keyboard, create_cancel_keyboard
+    create_quick_time_keyboard, create_cancel_keyboard,
+    create_events_for_edit_keyboard
 )
 from states.states import EventStates
 
 db_manager = DatabaseManager()
+
+async def edit_time_handler(message: types.Message):
+    """Обработчик команды /edit_time. Получает последние 4 события и предлагает их для редактирования."""
+    # Запрашиваем из БД последние 4 события
+    events = db_manager.get_last_four_events()
+    if not events:
+        await message.answer("Нет недавних событий для редактирования.")
+        return
+    
+    # Отправляем сообщение с инлайн-клавиатурой
+    await message.answer(
+        "Выберите событие, время которого хотите изменить:",
+        reply_markup=create_events_for_edit_keyboard(events)
+    )
+
+async def select_event_for_edit_handler(callback_query: types.CallbackQuery, state: FSMContext):
+    """Обработчик выбора события для редактирования. Сохраняет информацию о событии в FSM.
+    """
+    # Извлекаем db_key из callback_data
+    db_key_str = callback_query.data.split("_")[-1]
+    db_key = db_key_str.encode('utf-8')
+    
+    # Находим выбранное событие в списке, чтобы получить все его данные
+    events = db_manager.get_last_four_events()
+    selected_event = next((event for event in events if event[0] == db_key), None)
+
+    if not selected_event:
+        await callback_query.message.answer("Ошибка: Событие не найдено.")
+        await callback_query.answer()
+        return
+
+    _, staff_id, date_pass, time_pass, type_pass = selected_event
+    staff_name = next((name for name, s_id in STAFF_IDS.items() if s_id == staff_id), "Unknown")
+    event_type_text = "🟢 Вход" if type_pass == 1 else "🔴 Выход"
+
+    # Сохраняем данные в состояние FSM
+    await state.update_data(db_key=db_key, staff_id=staff_id, date_pass=date_pass, old_time_pass=time_pass)
+    
+    # Отправляем пользователю подтверждение и просим ввести новое время
+    await callback_query.message.edit_text(
+        f"Выбрано событие:\n"
+        f"{event_type_text} {staff_name} - {date_pass.strftime('%d.%m')} {time_pass.strftime('%H:%M:%S')}\n\n"
+        f"Введите новое время в формате ЧЧ:ММ:СС"
+    )
+    # Устанавливаем следующее состояние
+    await state.set_state(EventStates.waiting_for_new_time)
+    await callback_query.answer()
+
+async def process_new_time_handler(message: types.Message, state: FSMContext):
+    """Обрабатывает введенное пользователем новое время и обновляет событие в БД."""
+    new_time = message.text
+    try:
+        # Простая валидация формата времени
+        datetime.strptime(new_time, '%H:%M:%S')
+    except ValueError:
+        await message.answer("Неверный формат времени. Введите в формате ЧЧ:ММ:СС")
+        return
+
+    # Получаем сохраненные данные из FSM
+    data = await state.get_data()
+    db_key = data['db_key']
+    staff_id = data['staff_id']
+    date_pass = data['date_pass']
+    old_time_pass = data['old_time_pass']
+
+    # Вызываем метод для обновления времени в БД
+    success, error_msg = db_manager.update_event_time(db_key, staff_id, date_pass, old_time_pass, new_time)
+
+    # Сообщаем результат пользователю
+    if success:
+        await message.answer("✅ Время события успешно обновлено!", reply_markup=create_main_keyboard())
+    else:
+        await message.answer(f"❌ Ошибка при обновлении: {error_msg}", reply_markup=create_main_keyboard())
+
+    # Очищаем состояние FSM
+    await state.clear()
+
 
 async def create_handler(message: types.Message):
     """Обработчик команды /create"""
