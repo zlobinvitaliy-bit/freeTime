@@ -12,11 +12,11 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
 
 # Настройки
-BOT_TOKEN = "5547644775:AAFJ_k6mnKq3bJESW-S5vw9YpixmZ313yk8"  # Замените на ваш токен бота
-DB_HOST = "10.15.0.40"  # Хост базы данных
-DB_PATH = "E:\\Perco\\SCD17K#.FDB"  # Путь к базе данных
+BOT_TOKEN = "7560155105:AAFPrs5kQukH9Y-IaEgPnimkGSe9vD0v5-U"  # Замените на ваш токен бота
+DB_HOST = "127.0.0.1"  # Хост базы данных
+DB_PATH = "T:\\PERCO.FDB"  # Путь к базе данных
 DB_USER = "SYSDBA"  # Пользователь базы данных
-DB_PASSWORD = "GpjT7M41"  # Пароль базы данных
+DB_PASSWORD = "masterkey"  # Пароль базы данных
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -26,7 +26,7 @@ storage = MemoryStorage()
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=storage)
 
-admin_ids = [8029793586, 642425664]
+admin_ids = [8029793586, 642425664, 1857738565]
 
 # ID пользователей для мониторинга
 STAFF_IDS = {

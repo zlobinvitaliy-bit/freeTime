@@ -2,13 +2,13 @@
 from datetime import datetime, timedelta
 
 # Настройки бота
-BOT_TOKEN = "5547644775:AAFJ_k6mnKq3bJESW-S5vw9YpixmZ313yk8"
+BOT_TOKEN = "7560155105:AAFPrs5kQukH9Y-IaEgPnimkGSe9vD0v5-U"
 
 # Настройки базы данных
-DB_HOST = "10.15.0.40"
-DB_PATH = "E:\\Perco\\SCD17K#.FDB"
+DB_HOST = "127.0.0.1"
+DB_PATH = "T:\\PERCO.FDB"
 DB_USER = "SYSDBA"
-DB_PASSWORD = "GpjT7M41"
+DB_PASSWORD = masterkey
 
 # Права доступа
 admin_ids = [8029793586, 642425664, 1857738565]
